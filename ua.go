@@ -417,18 +417,17 @@ func (p *Parser) parse(userAgent string, tokens *properties) {
 
 	addToken := func() {
 		if buff.Len() != 0 {
-			s := strings.TrimSpace(buff.String())
+			s := bytes.TrimSpace(buff.Bytes())
 			if !ignore(s) {
 				if isURL {
-					s = strings.TrimPrefix(s, "+")
+					s = bytes.TrimPrefix(s, []byte("+"))
 				}
 
 				if val.Len() == 0 { // only if value don't exists
-					var ver string
-					s, ver = checkVer(s) // determin version string and split
+					s, ver := checkVer(s) // determin version string and split
 					tokens.add(s, ver)
 				} else {
-					tokens.add(s, strings.TrimSpace(val.String()))
+					tokens.add(s, bytes.TrimSpace(val.Bytes()))
 				}
 			}
 		}
@@ -441,9 +440,9 @@ func (p *Parser) parse(userAgent string, tokens *properties) {
 	parOpen := false
 	braOpen := false
 
-	bua := []byte(userAgent)
-	for i, c := range bua {
-
+	var c byte
+	for i := 0; i < len(userAgent); i++ {
+		c = userAgent[i]
 		//fmt.Println(string(c), c)
 		switch {
 		case c == 41: // )
@@ -471,7 +470,7 @@ func (p *Parser) parse(userAgent string, tokens *properties) {
 			if bytes.HasSuffix(buff.Bytes(), []byte("http")) || bytes.HasSuffix(buff.Bytes(), []byte("https")) {
 				// If we are part of a URL just write the character.
 				buff.WriteByte(c)
-			} else if i != len(bua)-1 && bua[i+1] != ' ' {
+			} else if i != len(userAgent)-1 && userAgent[i+1] != ' ' {
 				// If the following character is not a space, change to a space.
 				buff.WriteByte(' ')
 			}
@@ -484,11 +483,11 @@ func (p *Parser) parse(userAgent string, tokens *properties) {
 			val.WriteByte(c)
 
 		case c == 47 && !isURL: //   /
-			if i != len(bua)-1 && bua[i+1] == 47 && (bytes.HasSuffix(buff.Bytes(), []byte("http:")) || bytes.HasSuffix(buff.Bytes(), []byte("https:"))) {
+			if i != len(userAgent)-1 && userAgent[i+1] == 47 && (bytes.HasSuffix(buff.Bytes(), []byte("http:")) || bytes.HasSuffix(buff.Bytes(), []byte("https:"))) {
 				buff.WriteByte(c)
 				isURL = true
 			} else {
-				if ignore(buff.String()) {
+				if ignore(buff.Bytes()) {
 					buff.Reset()
 				} else {
 					slash = true
@@ -502,22 +501,22 @@ func (p *Parser) parse(userAgent string, tokens *properties) {
 	addToken()
 }
 
-func checkVer(s string) (name, v string) {
-	i := strings.LastIndex(s, " ")
+func checkVer(s []byte) ([]byte, []byte) {
+	i := bytes.LastIndex(s, []byte(" "))
 	if i == -1 {
-		return s, ""
+		return s, nil
 	}
 
 	//v = s[i+1:]
 
-	switch s[:i] {
-	case "Linux", "Windows NT", "Windows Phone OS", "MSIE", "Android":
+	switch {
+	case bytes.Equal(s[:i], []byte("Linux")) || bytes.Equal(s[:i], []byte("Windows NT")) || bytes.Equal(s[:i], []byte("Windows Phone OS")) || bytes.Equal(s[:i], []byte("MSIE")) || bytes.Equal(s[:i], []byte("Android")):
 		return s[:i], s[i+1:]
-	case "CrOS x86_64", "CrOS aarch64", "CrOS armv7l":
-		j := strings.LastIndex(s[:i], " ")
+	case bytes.Equal(s[:i], []byte("CrOS x86_64")) || bytes.Equal(s[:i], []byte("CrOS aarch64")) || bytes.Equal(s[:i], []byte("CrOS armv7l")):
+		j := bytes.LastIndex(s[:i], []byte(" "))
 		return s[:j], s[j+1 : i]
 	default:
-		return s, ""
+		return s, nil
 	}
 
 	// for _, c := range v {
@@ -530,13 +529,17 @@ func checkVer(s string) (name, v string) {
 }
 
 // ignore retursn true if token should be ignored
-func ignore(s string) bool {
-	switch s {
-	case "KHTML, like Gecko", "U", "compatible", "Mozilla", "WOW64", "en", "en-us", "en-gb", "ru-ru", "Browser":
-		return true
-	default:
-		return false
-	}
+func ignore(s []byte) bool {
+	return bytes.Equal(s, []byte("KHTML, like Gecko")) ||
+		bytes.Equal(s, []byte("U")) ||
+		bytes.Equal(s, []byte("compatible")) ||
+		bytes.Equal(s, []byte("Mozilla")) ||
+		bytes.Equal(s, []byte("WOW64")) ||
+		bytes.Equal(s, []byte("en")) ||
+		bytes.Equal(s, []byte("en-us")) ||
+		bytes.Equal(s, []byte("en-gb")) ||
+		bytes.Equal(s, []byte("ru-ru")) ||
+		bytes.Equal(s, []byte("Browser"))
 }
 
 type property struct {
@@ -547,8 +550,16 @@ type properties struct {
 	list []property
 }
 
-func (p *properties) add(key, value string) {
-	p.list = append(p.list, property{Key: key, Value: value})
+func (p *properties) add(key, value []byte) {
+	var prop property
+	if key != nil {
+		prop.Key = string(key)
+	}
+	if value != nil {
+		prop.Value = string(value)
+	}
+
+	p.list = append(p.list, prop)
 }
 
 func (p *properties) get(key string) string {
